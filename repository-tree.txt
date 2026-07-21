@@ -1,0 +1,43 @@
+.
+├── .github/
+│   └── workflows/quality.yml
+├── docs/
+│   ├── attachments/
+│   ├── README.md
+│   ├── assessment-system.md
+│   ├── quality-checklist.md
+│   ├── review-guide.md
+│   └── rpd.md
+├── M1-task-formulation/
+├── M2-data-understanding/
+├── M3-data-preparation/
+├── M4-modeling/
+├── M5-evaluation/
+├── M6-analytical-product/
+├── Project/
+├── Exam/
+├── methodical-guidelines/
+│   ├── students/
+│   ├── teachers-assessment/
+│   └── teachers-resources/
+├── resources/
+│   ├── benchmarks/
+│   ├── datasets/
+│   ├── llm-prompts/
+│   ├── papers/
+│   ├── problem-banks/
+│   ├── software/python-libs/
+│   ├── test-banks/
+│   └── textbooks/
+├── data/
+│   └── krm-v3.0.xlsx
+├── scripts/
+│   └── validate_repository.py
+├── team/
+├── other/
+├── .gitignore
+├── CONTRIBUTING.md
+├── LICENSE-CODE.md
+├── LICENSE.md
+├── README.md
+└── requirements.txt

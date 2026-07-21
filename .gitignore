@@ -1,0 +1,28 @@
+# Office temporary files
+~$*
+*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Generated student data and models
+data/raw/
+data/processed/
+models/
+artifacts/
+
+# Keep directory placeholders
+!.gitkeep
