@@ -145,7 +145,7 @@ def main() -> int:
         return 1
 
     print(f"Repository validation passed: {len(markdown_files())} Markdown files checked.")
-    print("Manual publication checks remain: team identities, OPOP metadata, local grading scale, and license approval.")
+    print("Manual publication checks remain: team identities, OPOP metadata, and license approval.")
     return 0
 
 
