@@ -5,9 +5,16 @@
 │   ├── attachments/
 │   ├── README.md
 │   ├── assessment-system.md
+│   ├── competency-model.md
+│   ├── fos.md
 │   ├── quality-checklist.md
 │   ├── review-guide.md
-│   └── rpd.md
+│   ├── rpd.md
+│   └── semester-guide.md
+├── Entry/
+│   ├── README.md
+│   ├── kim-00-diagnostic.md
+│   └── remediation-map.md
 ├── M1-task-formulation/
 ├── M2-data-understanding/
 ├── M3-data-preparation/
@@ -16,9 +23,14 @@
 ├── M6-analytical-product/
 ├── Project/
 ├── Exam/
+│   ├── README.md
+│   ├── defense-protocol.md
+│   ├── presentation-guide.md
+│   └── speech-outline.md
 ├── methodical-guidelines/
 │   ├── students/
 │   ├── teachers-assessment/
+│   │   └── gradebook-template.md
 │   └── teachers-resources/
 ├── resources/
 │   ├── benchmarks/
