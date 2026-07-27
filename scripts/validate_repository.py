@@ -19,6 +19,7 @@ REQUIRED_PATHS = [
     "docs/rpd.md",
     "docs/competency-model.md",
     "docs/role-trajectory.md",
+    "docs/measurement-model.md",
     "docs/fos.md",
     "docs/semester-guide.md",
     "docs/assessment-system.md",
@@ -64,6 +65,7 @@ KIM_REQUIRED_HEADINGS = [
 ]
 
 LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+LINK_ENTRY_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 POINT_PATTERN = re.compile(r"^\| (?:Модуль [1-6]|Зачёт) \|.*\| (\d+) \|$", re.MULTILINE)
 
 TARGET_COVERAGE = {
@@ -125,6 +127,74 @@ FOS_MATRIX = {
     "КИМ-6": [2, 2, 2, 2, 2, 2, 3, 15],
     "Защита": [2, 1, 1, 1, 1, 1, 3, 10],
 }
+
+TARGET_INDICATORS = [
+    "LC-1.1",
+    "BD-1.2",
+    "BD-1.3",
+    "BD-1.5",
+    "ML-2.1",
+    "ML-2.2",
+    "ML-2.3",
+]
+
+INDICATOR_COMPETENCES = {
+    "LC-1.1": "LC-1",
+    "BD-1.2": "BD-1",
+    "BD-1.3": "BD-1",
+    "BD-1.5": "BD-1",
+    "ML-2.1": "ML-2",
+    "ML-2.2": "ML-2",
+    "ML-2.3": "ML-2",
+}
+
+INDICATOR_THRESHOLDS = {
+    "LC-1.1": "7 из 14",
+    "BD-1.2": "9 из 18",
+    "BD-1.3": "5 из 9",
+    "BD-1.5": "4 из 8",
+    "ML-2.1": "8 из 15",
+    "ML-2.2": "8 из 15",
+    "ML-2.3": "11 из 21",
+}
+
+MEASUREMENT_LINKS = {
+    "КИМ-1": (
+        "../M1-task-formulation/kim-01-project-brief.md",
+        "../M1-task-formulation/rubric-01.md",
+    ),
+    "КИМ-2": (
+        "../M2-data-understanding/kim-02-eda.md",
+        "../M2-data-understanding/rubric-02.md",
+    ),
+    "КИМ-3": (
+        "../M3-data-preparation/kim-03-data-preparation.md",
+        "../M3-data-preparation/rubric-03.md",
+    ),
+    "КИМ-4": (
+        "../M4-modeling/kim-04-modeling.md",
+        "../M4-modeling/rubric-04.md",
+    ),
+    "КИМ-5": (
+        "../M5-evaluation/kim-05-validation.md",
+        "../M5-evaluation/rubric-05.md",
+    ),
+    "КИМ-6": (
+        "../M6-analytical-product/kim-06-analytical-report.md",
+        "../M6-analytical-product/rubric-06.md",
+    ),
+    "Защита": (
+        "../Exam/README.md",
+        "../Exam/README.md#7-оценивание-защиты",
+    ),
+}
+
+MEASUREMENT_SYNC_FILES = [
+    "README.md",
+    "docs/README.md",
+    "docs/fos.md",
+    "docs/review-guide.md",
+]
 
 ROLE_TRAJECTORY_REQUIRED_SNIPPETS = [
     "промежуточный уровень С",
@@ -229,7 +299,7 @@ def check_indicator_coverage(errors: list[str]) -> None:
             errors.append(f"entry indicator missing from diagnostic: {indicator}")
 
 
-def check_fos_matrix(errors: list[str]) -> None:
+def parse_fos_matrix(errors: list[str]) -> dict[str, list[int]]:
     text = (ROOT / "docs/fos.md").read_text(encoding="utf-8")
     found: dict[str, list[int]] = {}
     for line in text.splitlines():
@@ -240,7 +310,11 @@ def check_fos_matrix(errors: list[str]) -> None:
             found[cells[0]] = [int(value) for value in cells[1:]]
         except ValueError:
             errors.append(f"non-numeric FOS matrix row: {cells[0]}")
+    return found
 
+
+def check_fos_matrix(errors: list[str]) -> None:
+    found = parse_fos_matrix(errors)
     if found != FOS_MATRIX:
         errors.append(f"unexpected FOS matrix: {found}")
 
@@ -248,6 +322,158 @@ def check_fos_matrix(errors: list[str]) -> None:
         column_totals = [sum(row[index] for row in found.values()) for index in range(8)]
         if column_totals != [14, 18, 9, 8, 15, 15, 21, 100]:
             errors.append(f"unexpected FOS column totals: {column_totals}")
+
+
+def check_measurement_model(errors: list[str]) -> None:
+    path = ROOT / "docs/measurement-model.md"
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    rows: list[tuple[int, list[str]]] = []
+    in_table = False
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if line.startswith("| Модуль или элемент |"):
+            in_table = True
+            continue
+        if in_table and line.startswith("## "):
+            break
+        if not in_table or not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if all(not cell or set(cell) <= {":", "-"} for cell in cells):
+            continue
+        if len(cells) != 14:
+            errors.append(f"measurement model row {line_number} has {len(cells)} columns, expected 14")
+            continue
+        rows.append((line_number, cells))
+
+    if len(rows) != 22:
+        errors.append(f"measurement model has {len(rows)} data rows, expected 22")
+
+    measurement_matrix = {name: [0] * len(TARGET_INDICATORS) for name in FOS_MATRIX}
+    seen_indicators: set[str] = set()
+    seen_kims: set[str] = set()
+
+    for line_number, cells in rows:
+        competence = cells[2].strip("`")
+        indicator = cells[3].strip("`")
+        level = cells[4]
+        descriptor = cells[5]
+        artifact = cells[6]
+        lesson_form = cells[7]
+        control_form = cells[8]
+        kim_cell = cells[9]
+        rubric_cell = cells[10]
+        points_cell = cells[11]
+        threshold = cells[12]
+        resources_cell = cells[13]
+
+        if indicator not in INDICATOR_COMPETENCES:
+            errors.append(f"measurement model row {line_number} has unknown indicator: {indicator}")
+            continue
+        seen_indicators.add(indicator)
+
+        if competence != INDICATOR_COMPETENCES[indicator]:
+            errors.append(
+                f"measurement model row {line_number} maps {indicator} to {competence}, "
+                f"expected {INDICATOR_COMPETENCES[indicator]}"
+            )
+        if level != "С":
+            errors.append(f"measurement model row {line_number} has level {level!r}, expected 'С'")
+        if threshold != INDICATOR_THRESHOLDS[indicator]:
+            errors.append(
+                f"measurement model row {line_number} has threshold {threshold!r} for {indicator}, "
+                f"expected {INDICATOR_THRESHOLDS[indicator]!r}"
+            )
+        for field_name, value in (
+            ("element", cells[0]),
+            ("thematic content", cells[1]),
+            ("descriptor", descriptor),
+            ("artifact", artifact),
+            ("lesson form", lesson_form),
+            ("control form", control_form),
+        ):
+            if not value:
+                errors.append(f"measurement model row {line_number} has empty {field_name}")
+
+        kim_match = LINK_ENTRY_PATTERN.fullmatch(kim_cell)
+        rubric_match = LINK_ENTRY_PATTERN.fullmatch(rubric_cell)
+        if not kim_match:
+            errors.append(f"measurement model row {line_number} has unlinked KIM")
+            continue
+        if not rubric_match:
+            errors.append(f"measurement model row {line_number} has unlinked rubric")
+            continue
+
+        kim_name = kim_match.group(1)
+        if kim_name.casefold() == "защита":
+            kim_name = "Защита"
+        if kim_name not in MEASUREMENT_LINKS:
+            errors.append(f"measurement model row {line_number} has unknown KIM: {kim_name}")
+            continue
+        seen_kims.add(kim_name)
+
+        expected_kim_link, expected_rubric_link = MEASUREMENT_LINKS[kim_name]
+        if kim_match.group(2) != expected_kim_link:
+            errors.append(f"measurement model row {line_number} has unexpected KIM link for {kim_name}")
+        if rubric_match.group(2) != expected_rubric_link:
+            errors.append(f"measurement model row {line_number} has unexpected rubric link for {kim_name}")
+
+        resource_matches = list(LINK_ENTRY_PATTERN.finditer(resources_cell))
+        unlinked_resource_text = LINK_ENTRY_PATTERN.sub("", resources_cell).strip(" ,;")
+        if not resource_matches or unlinked_resource_text:
+            errors.append(f"measurement model row {line_number} has unlinked resource text")
+
+        try:
+            points = int(points_cell)
+        except ValueError:
+            errors.append(f"measurement model row {line_number} has non-numeric points: {points_cell!r}")
+            continue
+        if points <= 0:
+            errors.append(f"measurement model row {line_number} has non-positive points: {points}")
+            continue
+
+        indicator_index = TARGET_INDICATORS.index(indicator)
+        measurement_matrix[kim_name][indicator_index] += points
+
+    if seen_indicators != set(TARGET_INDICATORS):
+        errors.append(f"measurement model indicator set differs: {sorted(seen_indicators)}")
+    if seen_kims != set(FOS_MATRIX):
+        errors.append(f"measurement model KIM set differs: {sorted(seen_kims)}")
+
+    fos_matrix = parse_fos_matrix(errors)
+    measurement_with_totals = {
+        name: values + [sum(values)]
+        for name, values in measurement_matrix.items()
+    }
+    if measurement_with_totals != fos_matrix:
+        errors.append(
+            "measurement model point matrix does not match docs/fos.md: "
+            f"{measurement_with_totals}"
+        )
+
+    if measurement_with_totals:
+        indicator_totals = [
+            sum(row[index] for row in measurement_with_totals.values())
+            for index in range(len(TARGET_INDICATORS))
+        ]
+        fos_indicator_totals = [
+            sum(row[index] for row in fos_matrix.values())
+            for index in range(len(TARGET_INDICATORS))
+        ]
+        if indicator_totals != fos_indicator_totals:
+            errors.append(
+                "measurement model indicator totals do not match docs/fos.md: "
+                f"{indicator_totals} != {fos_indicator_totals}"
+            )
+        if sum(row[-1] for row in measurement_with_totals.values()) != 100:
+            errors.append("measurement model points do not sum to 100")
+
+    for relative in MEASUREMENT_SYNC_FILES:
+        linked_path = ROOT / relative
+        if linked_path.exists() and "measurement-model.md" not in linked_path.read_text(encoding="utf-8"):
+            errors.append(f"measurement model is not linked from: {relative}")
 
 
 def check_role_trajectory(errors: list[str]) -> None:
@@ -285,6 +511,7 @@ def main() -> int:
     check_points(errors)
     check_indicator_coverage(errors)
     check_fos_matrix(errors)
+    check_measurement_model(errors)
     check_role_trajectory(errors)
     check_files(errors)
 
