@@ -9,6 +9,7 @@
 │   ├── fos.md
 │   ├── quality-checklist.md
 │   ├── review-guide.md
+│   ├── role-trajectory.md
 │   ├── rpd.md
 │   └── semester-guide.md
 ├── Entry/

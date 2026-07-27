@@ -4,6 +4,7 @@
 |---|---|
 | [rpd.md](rpd.md) | рабочая программа дисциплины |
 | [competency-model.md](competency-model.md) | входные и целевые компетенции, индикаторы и уровни |
+| [role-trajectory.md](role-trajectory.md) | траектория от входных дисциплин через уровень С к уровню П для Data Analyst |
 | [fos.md](fos.md) | паспорт ФОС и карта покрытия индикаторов |
 | [semester-guide.md](semester-guide.md) | план работы преподавателя по неделям |
 | [assessment-system.md](assessment-system.md) | балльная модель, пороги и правила пересдачи |

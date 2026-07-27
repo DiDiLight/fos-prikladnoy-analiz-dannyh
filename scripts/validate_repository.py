@@ -18,6 +18,7 @@ REQUIRED_PATHS = [
     "LICENSE-CODE.md",
     "docs/rpd.md",
     "docs/competency-model.md",
+    "docs/role-trajectory.md",
     "docs/fos.md",
     "docs/semester-guide.md",
     "docs/assessment-system.md",
@@ -125,6 +126,33 @@ FOS_MATRIX = {
     "Защита": [2, 1, 1, 1, 1, 1, 3, 10],
 }
 
+ROLE_TRAJECTORY_REQUIRED_SNIPPETS = [
+    "промежуточный уровень С",
+    "рекомендован уровень П",
+    "могут уточняться с учётом образовательной программы",
+    "3 ЗЕТ",
+    "108 часов",
+    "Дисциплина по углублённой статистике",
+    "Практика",
+    "НИРС",
+    "Выпускная работа",
+    "возможными, а не обязательными",
+    "не включаются в 100-балльную модель курса",
+    "BD-1.2",
+    "BD-1.3",
+    "BD-1.5",
+    "Предполагаемые артефакты",
+    "Возможная форма контроля",
+]
+
+ROLE_TRAJECTORY_SYNC_FILES = [
+    "README.md",
+    "docs/README.md",
+    "docs/rpd.md",
+    "docs/competency-model.md",
+    "docs/semester-guide.md",
+]
+
 
 def markdown_files() -> list[Path]:
     return sorted(path for path in ROOT.rglob("*.md") if ".git" not in path.parts)
@@ -222,6 +250,22 @@ def check_fos_matrix(errors: list[str]) -> None:
             errors.append(f"unexpected FOS column totals: {column_totals}")
 
 
+def check_role_trajectory(errors: list[str]) -> None:
+    trajectory_path = ROOT / "docs/role-trajectory.md"
+    if not trajectory_path.exists():
+        return
+
+    trajectory_text = trajectory_path.read_text(encoding="utf-8")
+    for snippet in ROLE_TRAJECTORY_REQUIRED_SNIPPETS:
+        if snippet not in trajectory_text:
+            errors.append(f"role trajectory is missing key statement: {snippet!r}")
+
+    for relative in ROLE_TRAJECTORY_SYNC_FILES:
+        path = ROOT / relative
+        if path.exists() and "role-trajectory.md" not in path.read_text(encoding="utf-8"):
+            errors.append(f"role trajectory is not linked from: {relative}")
+
+
 def check_files(errors: list[str]) -> None:
     for path in ROOT.rglob("*"):
         if not path.is_file() or ".git" in path.parts:
@@ -241,6 +285,7 @@ def main() -> int:
     check_points(errors)
     check_indicator_coverage(errors)
     check_fos_matrix(errors)
+    check_role_trajectory(errors)
     check_files(errors)
 
     if errors:
