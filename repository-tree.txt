@@ -52,6 +52,9 @@
 │   ├── problem-banks/
 │   ├── software/python-libs/
 │   ├── test-banks/
+│   │   ├── README.md
+│   │   ├── mini-colloquium.md
+│   │   └── question-bank.md
 │   └── textbooks/
 ├── data/
 │   └── krm-v3.0.xlsx

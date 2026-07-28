@@ -50,6 +50,9 @@ REQUIRED_PATHS = [
     "requirements.txt",
     "requirements-lock.txt",
     "scripts/smoke_test.py",
+    "resources/test-banks/README.md",
+    "resources/test-banks/question-bank.md",
+    "resources/test-banks/mini-colloquium.md",
 ]
 
 MODULES = [
@@ -214,6 +217,65 @@ INDICATOR_MINIMUMS = {
     "ML-2.2": 8,
     "ML-2.3": 11,
 }
+
+QUESTION_BANK_HEADER = [
+    "ID",
+    "Формат",
+    "Вопрос или ситуация",
+    "Индикатор",
+    "Проверяемое действие",
+    "Правильный ответ или ориентир",
+    "Типичная ошибка",
+]
+
+MINIMUM_QUESTION_COVERAGE = {
+    "LC-1.1": 2,
+    "BD-1.2": 2,
+    "BD-1.3": 2,
+    "BD-1.5": 2,
+    "ML-2.1": 2,
+    "ML-2.2": 2,
+    "ML-2.3": 2,
+}
+
+COLLOQUIUM_QUESTION_IDS = {
+    "TB-07",
+    "TB-08",
+    "TB-11",
+    "TB-12",
+    "TB-13",
+    "TB-14",
+}
+
+KIM0_REQUIRED_HEADINGS = [
+    "## Назначение",
+    "## Статус в дисциплине",
+    "## Проверяем",
+    "## Материалы",
+    "## Задание",
+    "## Формат сдачи",
+    "## Оценивание",
+    "## Ориентиры для проверки",
+    "## Проведение",
+    "## Обратная связь и повторная проверка",
+    "## Внешние ресурсы и генеративный ИИ",
+    "## Самопроверка",
+]
+
+FORMATIVE_SYNC_FILES = [
+    "README.md",
+    "docs/rpd.md",
+    "docs/fos.md",
+    "docs/assessment-system.md",
+    "docs/measurement-model.md",
+    "docs/semester-guide.md",
+    "docs/quality-checklist.md",
+    "docs/review-guide.md",
+    "methodical-guidelines/README.md",
+    "methodical-guidelines/students/README.md",
+    "methodical-guidelines/teachers-assessment/README.md",
+    "resources/README.md",
+]
 
 MEASUREMENT_LINKS = {
     "КИМ-1": (
@@ -618,6 +680,176 @@ def check_indicator_thresholds(errors: list[str]) -> None:
             "indicator thresholds in docs/assessment-system.md differ: "
             f"{assessment_thresholds}"
         )
+
+
+def check_formative_assessment(errors: list[str]) -> None:
+    bank_path = ROOT / "resources/test-banks/question-bank.md"
+    colloquium_path = ROOT / "resources/test-banks/mini-colloquium.md"
+    kim0_path = ROOT / "Entry/kim-00-diagnostic.md"
+    if not all(path.exists() for path in (bank_path, colloquium_path, kim0_path)):
+        return
+
+    bank_text = bank_path.read_text(encoding="utf-8")
+    lines = bank_text.splitlines()
+    header_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("|")
+            and markdown_table_cells(line) == QUESTION_BANK_HEADER
+        ),
+        None,
+    )
+    if header_index is None:
+        errors.append("question bank has no table with the required metadata columns")
+        question_rows: dict[str, str] = {}
+    else:
+        question_rows = {}
+        coverage = {indicator: 0 for indicator in TARGET_INDICATORS}
+        for line_number, line in enumerate(lines[header_index + 2 :], start=header_index + 3):
+            if not line.startswith("|"):
+                break
+            cells = markdown_table_cells(line)
+            if len(cells) != len(QUESTION_BANK_HEADER):
+                errors.append(
+                    f"question bank row {line_number} has {len(cells)} columns, "
+                    f"expected {len(QUESTION_BANK_HEADER)}"
+                )
+                continue
+            question_id = cells[0].strip("`")
+            indicator = cells[3].strip("`")
+            if not re.fullmatch(r"TB-\d{2}", question_id):
+                errors.append(f"invalid question ID at row {line_number}: {question_id!r}")
+                continue
+            if question_id in question_rows:
+                errors.append(f"duplicate question ID: {question_id}")
+                continue
+            if indicator not in TARGET_INDICATORS:
+                errors.append(
+                    f"question {question_id} has unknown indicator: {indicator!r}"
+                )
+                continue
+            for column_index, minimum_length in (
+                (1, 5),
+                (2, 20),
+                (4, 15),
+                (5, 20),
+                (6, 15),
+            ):
+                if len(cells[column_index]) < minimum_length:
+                    errors.append(
+                        f"question {question_id} has an incomplete "
+                        f"{QUESTION_BANK_HEADER[column_index].casefold()}"
+                    )
+            question_rows[question_id] = indicator
+            coverage[indicator] += 1
+
+        if len(question_rows) < 14:
+            errors.append(
+                f"question bank has {len(question_rows)} questions, expected at least 14"
+            )
+        for indicator, minimum in MINIMUM_QUESTION_COVERAGE.items():
+            if coverage[indicator] < minimum:
+                errors.append(
+                    f"question bank covers {indicator} with {coverage[indicator]} "
+                    f"questions, expected at least {minimum}"
+                )
+
+    if "Вопросов на воспроизведение синтаксиса Python в банке нет." not in bank_text:
+        errors.append("question bank does not exclude Python syntax recall")
+
+    colloquium_text = colloquium_path.read_text(encoding="utf-8")
+    found_colloquium_ids = set(re.findall(r"`(TB-\d{2})`", colloquium_text))
+    if found_colloquium_ids != COLLOQUIUM_QUESTION_IDS:
+        errors.append(
+            "mini-colloquium question set differs: "
+            f"{sorted(found_colloquium_ids)}"
+        )
+    missing_ids = sorted(COLLOQUIUM_QUESTION_IDS - set(question_rows))
+    if missing_ids:
+        errors.append(f"mini-colloquium references missing questions: {missing_ids}")
+    expected_colloquium_coverage = {
+        "BD-1.5": 2,
+        "ML-2.2": 2,
+        "ML-2.3": 2,
+    }
+    actual_colloquium_coverage = {
+        indicator: sum(
+            question_rows.get(question_id) == indicator
+            for question_id in COLLOQUIUM_QUESTION_IDS
+        )
+        for indicator in expected_colloquium_coverage
+    }
+    if actual_colloquium_coverage != expected_colloquium_coverage:
+        errors.append(
+            "mini-colloquium indicator coverage differs: "
+            f"{actual_colloquium_coverage}"
+        )
+    for snippet in (
+        "не является КИМ-7",
+        "не добавляет баллы",
+        "Основным доказательством освоения остаются проектный артефакт",
+        "готов к КИМ-5",
+        "требуется доработка",
+    ):
+        if snippet not in colloquium_text:
+            errors.append(f"mini-colloquium is missing key statement: {snippet!r}")
+
+    kim0_text = kim0_path.read_text(encoding="utf-8")
+    for heading in KIM0_REQUIRED_HEADINGS:
+        if heading not in kim0_text:
+            errors.append(f"KIM-0 is missing section: {heading!r}")
+    for indicator in ENTRY_INDICATORS:
+        if indicator not in kim0_text:
+            errors.append(f"KIM-0 is missing entry indicator: {indicator}")
+    for snippet in (
+        "не входит в итоговые 100 баллов",
+        "не являются баллами дисциплины",
+        "повторная проверка",
+    ):
+        if snippet not in kim0_text:
+            errors.append(f"KIM-0 is missing key statement: {snippet!r}")
+
+    fos_text = (ROOT / "docs/fos.md").read_text(encoding="utf-8")
+    for link_fragment in (
+        "../Entry/kim-00-diagnostic.md",
+        "../resources/test-banks/mini-colloquium.md",
+        "../resources/test-banks/question-bank.md",
+    ):
+        matching_lines = [
+            line for line in fos_text.splitlines() if link_fragment in line
+        ]
+        if len(matching_lines) != 1:
+            errors.append(f"FOS must contain one auxiliary row for: {link_fragment}")
+            continue
+        cells = markdown_table_cells(matching_lines[0])
+        if not cells or cells[-1] != "0":
+            errors.append(f"FOS auxiliary form has non-zero points: {link_fragment}")
+
+    measurement_text = (ROOT / "docs/measurement-model.md").read_text(encoding="utf-8")
+    auxiliary_rows = [
+        markdown_table_cells(line)
+        for line in measurement_text.splitlines()
+        if line.startswith("| ")
+        and (
+            line.startswith("| КИМ-0 |")
+            or line.startswith("| Мини-коллоквиум |")
+            or line.startswith("| Формирующие вопросы |")
+        )
+    ]
+    if len(auxiliary_rows) != 5:
+        errors.append(
+            f"measurement model has {len(auxiliary_rows)} auxiliary rows, expected 5"
+        )
+    for cells in auxiliary_rows:
+        if len(cells) != 8 or cells[6] != "0":
+            errors.append(f"measurement model auxiliary row is invalid: {cells}")
+
+    for relative in FORMATIVE_SYNC_FILES:
+        path = ROOT / relative
+        text = path.read_text(encoding="utf-8")
+        if "test-banks" not in text and "mini-colloquium.md" not in text:
+            errors.append(f"formative assessment is not linked from: {relative}")
 
 
 def check_environment_files(errors: list[str]) -> None:
@@ -1026,6 +1258,7 @@ def main() -> int:
     check_fos_matrix(errors)
     check_rubrics(errors)
     check_indicator_thresholds(errors)
+    check_formative_assessment(errors)
     check_measurement_model(errors)
     check_role_trajectory(errors)
     check_synthetic_case(errors)
@@ -1041,7 +1274,8 @@ def main() -> int:
     print(f"Repository validation passed: {len(markdown_files())} Markdown files checked.")
     print(
         "Checked: required files, links and anchors, template markers, six rubrics, "
-        "KIM/FOS points, indicator thresholds, environment files, and synthetic case."
+        "KIM/FOS points, indicator thresholds, question coverage, environment files, "
+        "and synthetic case."
     )
     print("Manual publication checks remain: team identities, OPOP metadata, and license approval.")
     return 0
