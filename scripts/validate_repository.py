@@ -6,10 +6,14 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
+import posixpath
 import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote
+from zipfile import BadZipFile, ZipFile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,10 +29,13 @@ LOCAL_DIRECTORY_NAMES = {
 REQUIRED_PATHS = [
     "README.md",
     ".gitattributes",
+    ".github/workflows/quality.yml",
     "CONTRIBUTING.md",
     "LICENSE.md",
     "LICENSE-CODE.md",
     "docs/rpd.md",
+    "docs/publication-status.md",
+    "docs/entry-profile.md",
     "docs/competency-model.md",
     "docs/role-trajectory.md",
     "docs/measurement-model.md",
@@ -37,6 +44,10 @@ REQUIRED_PATHS = [
     "docs/assessment-system.md",
     "docs/quality-checklist.md",
     "docs/review-guide.md",
+    "docs/attachments/README.md",
+    "docs/attachments/rpd-draft.docx",
+    "docs/attachments/entry-profile.docx",
+    "docs/attachments/course-presentation.pptx",
     "Project/README.md",
     "Exam/README.md",
     "Exam/presentation-guide.md",
@@ -325,8 +336,8 @@ ROLE_TRAJECTORY_REQUIRED_SNIPPETS = [
     "Практика",
     "НИРС",
     "Выпускная работа",
-    "возможными, а не обязательными",
-    "не включаются в 100-балльную модель курса",
+    "только как возможные продолжения",
+    "не входят в содержание дисциплины и её 100-балльную модель",
     "BD-1.2",
     "BD-1.3",
     "BD-1.5",
@@ -341,6 +352,29 @@ ROLE_TRAJECTORY_SYNC_FILES = [
     "docs/competency-model.md",
     "docs/semester-guide.md",
 ]
+
+KRM_INDICATOR_TEXTS = [
+    "Формализует бизнес-цели и вырабатывает под них стратегии внедрения ИИ",
+    (
+        "Обосновывает способы и варианты применения методов предварительного "
+        "анализа данных в задачах ИИ, включая их математическое (алгоритмическое) "
+        "преобразование и адаптацию к специфике задачи"
+    ),
+    (
+        "Применяет методы анализа данных для проверки разведочных гипотез и "
+        "подготовки данных к применению современных методов ИИ"
+    ),
+    "Отбирает признаки данных, значимые для исследования",
+    "Различает основные типы задач МО и применяет на практике принципы их решения",
+    "Применяет методы предварительной обработки данных и работы с признаками",
+    "Решает проблемы несбалансированных данных и оценивает качество моделей",
+]
+
+OFFICE_FILES = {
+    "rpd": "docs/attachments/rpd-draft.docx",
+    "entry": "docs/attachments/entry-profile.docx",
+    "slides": "docs/attachments/course-presentation.pptx",
+}
 
 
 def markdown_files() -> list[Path]:
@@ -455,6 +489,9 @@ def check_points(errors: list[str]) -> None:
         errors.append(f"unexpected assessment point sequence: {points}")
     if sum(points) != 100:
         errors.append(f"assessment points sum to {sum(points)}, expected 100")
+    for snippet in ("50–69 баллов — 3", "70–85 — 4", "86–100 — 5"):
+        if snippet not in text:
+            errors.append(f"README assessment scale is missing: {snippet!r}")
 
 
 def check_indicator_coverage(errors: list[str]) -> None:
@@ -1062,6 +1099,247 @@ def check_role_trajectory(errors: list[str]) -> None:
             errors.append(f"role trajectory is not linked from: {relative}")
 
 
+def xml_text_from_archive(path: Path, prefixes: tuple[str, ...]) -> str:
+    """Return visible text runs from selected XML parts of an OOXML archive."""
+
+    pieces: list[str] = []
+    with ZipFile(path) as archive:
+        broken_member = archive.testzip()
+        if broken_member:
+            raise BadZipFile(f"CRC error in {broken_member}")
+        for member in sorted(archive.namelist()):
+            if not member.endswith(".xml") or not member.startswith(prefixes):
+                continue
+            root = ET.fromstring(archive.read(member))
+            for node in root.iter():
+                if node.tag.rsplit("}", 1)[-1] == "t" and node.text:
+                    pieces.append(node.text)
+    return "\n".join(pieces)
+
+
+def normalize_visible_text(text: str) -> str:
+    return " ".join(text.split())
+
+
+def xlsx_sheet_values(path: Path, sheet_name: str) -> dict[str, str]:
+    """Read a worksheet into an A1-addressed mapping with the standard library."""
+
+    spreadsheet_ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
+    document_rel_ns = (
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    )
+    with ZipFile(path) as archive:
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            shared_root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+            for item in shared_root.findall(f"{{{spreadsheet_ns}}}si"):
+                shared_strings.append(
+                    "".join(
+                        node.text or ""
+                        for node in item.iter(f"{{{spreadsheet_ns}}}t")
+                    )
+                )
+
+        workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+        relationship_id = None
+        for sheet in workbook.findall(
+            f".//{{{spreadsheet_ns}}}sheet"
+        ):
+            if sheet.get("name") == sheet_name:
+                relationship_id = sheet.get(f"{{{document_rel_ns}}}id")
+                break
+        if not relationship_id:
+            raise KeyError(f"worksheet not found: {sheet_name}")
+
+        relationships = ET.fromstring(
+            archive.read("xl/_rels/workbook.xml.rels")
+        )
+        target = None
+        for relationship in relationships.findall(f"{{{rel_ns}}}Relationship"):
+            if relationship.get("Id") == relationship_id:
+                target = relationship.get("Target")
+                break
+        if not target:
+            raise KeyError(f"worksheet relationship not found: {sheet_name}")
+        worksheet_path = posixpath.normpath(posixpath.join("xl", target.lstrip("/")))
+        if worksheet_path.startswith("xl/xl/"):
+            worksheet_path = worksheet_path[3:]
+
+        worksheet = ET.fromstring(archive.read(worksheet_path))
+        values: dict[str, str] = {}
+        for cell in worksheet.findall(f".//{{{spreadsheet_ns}}}c"):
+            address = cell.get("r")
+            if not address:
+                continue
+            cell_type = cell.get("t")
+            if cell_type == "inlineStr":
+                value = "".join(
+                    node.text or ""
+                    for node in cell.iter(f"{{{spreadsheet_ns}}}t")
+                )
+            else:
+                value_node = cell.find(f"{{{spreadsheet_ns}}}v")
+                raw_value = value_node.text if value_node is not None else ""
+                if cell_type == "s" and raw_value:
+                    value = shared_strings[int(raw_value)]
+                else:
+                    value = raw_value
+            values[address] = value
+        return values
+
+
+def check_krm_source(errors: list[str]) -> None:
+    path = ROOT / "data/krm-v3.0.xlsx"
+    if not path.exists():
+        return
+    try:
+        workbook_text = xml_text_from_archive(path, ("xl/",))
+        role_values = xlsx_sheet_values(path, "Роли-компетенции наглядно")
+    except (BadZipFile, ET.ParseError, KeyError, ValueError, IndexError) as error:
+        errors.append(f"KRM workbook cannot be read: {error}")
+        return
+
+    if role_values.get("C9") != "BD-1" or role_values.get("K9") != "П":
+        errors.append(
+            "KRM role matrix no longer maps Data Analyst to level П for BD-1: "
+            f"C9={role_values.get('C9')!r}, K9={role_values.get('K9')!r}"
+        )
+    for indicator_text in KRM_INDICATOR_TEXTS:
+        if indicator_text not in workbook_text:
+            errors.append(f"KRM workbook is missing indicator text: {indicator_text!r}")
+
+    data_readme = (ROOT / "data/README.md").read_text(encoding="utf-8")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest not in data_readme.casefold():
+        errors.append("data/README.md SHA-256 does not match data/krm-v3.0.xlsx")
+
+
+def check_publication_status(errors: list[str]) -> None:
+    direction = "01.03.02 «Прикладная математика и информатика»"
+    semester = "6-й семестр"
+    for relative in (
+        "README.md",
+        "docs/rpd.md",
+        "docs/publication-status.md",
+        "docs/entry-profile.md",
+    ):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        if direction not in text:
+            errors.append(f"educational direction is not synchronized in: {relative}")
+        if semester not in text:
+            errors.append(f"semester is not synchronized in: {relative}")
+
+    publication_text = (ROOT / "docs/publication-status.md").read_text(
+        encoding="utf-8"
+    )
+    for snippet in (
+        "учебной работы по разработке РПД",
+        "не является утверждённой РПД",
+        "DiDiLight",
+        "не устанавливает их обязательность",
+    ):
+        if snippet not in publication_text:
+            errors.append(f"publication status is missing: {snippet!r}")
+
+    team_text = (ROOT / "team/README.md").read_text(encoding="utf-8")
+    for snippet in ("DiDiLight", "https://github.com/DiDiLight", "координатор"):
+        if snippet not in team_text:
+            errors.append(f"team card is missing: {snippet!r}")
+
+    for path in markdown_files():
+        text = path.read_text(encoding="utf-8")
+        if re.search(r"установочн\w*\s+(?:сесс|презентац)", text, re.IGNORECASE):
+            errors.append(
+                "unsupported installation-session claim: "
+                f"{path.relative_to(ROOT)}"
+            )
+
+
+def check_office_attachments(errors: list[str]) -> None:
+    paths = {name: ROOT / relative for name, relative in OFFICE_FILES.items()}
+    if not all(path.exists() for path in paths.values()):
+        return
+    try:
+        rpd_text = normalize_visible_text(
+            xml_text_from_archive(paths["rpd"], ("word/document.xml",))
+        )
+        entry_text = normalize_visible_text(
+            xml_text_from_archive(paths["entry"], ("word/document.xml",))
+        )
+        slides_text = normalize_visible_text(
+            xml_text_from_archive(paths["slides"], ("ppt/slides/slide",))
+        )
+    except (BadZipFile, ET.ParseError) as error:
+        errors.append(f"office attachment cannot be read: {error}")
+        return
+
+    common = (
+        "Прикладной анализ данных",
+        "01.03.02",
+        "Прикладная математика и информатика",
+        "6-й семестр",
+    )
+    for label, text in (
+        ("rpd-draft.docx", rpd_text),
+        ("entry-profile.docx", entry_text),
+        ("course-presentation.pptx", slides_text),
+    ):
+        for snippet in common:
+            if snippet not in text:
+                errors.append(f"{label} is missing synchronized text: {snippet!r}")
+
+    for snippet in (
+        "дифференцированный зачёт",
+        "BD-1.2",
+        "BD-1.3",
+        "BD-1.5",
+        "86–100",
+        "70–85",
+        "50–69",
+    ):
+        if snippet not in rpd_text:
+            errors.append(f"rpd-draft.docx is missing: {snippet!r}")
+    for snippet in (
+        "ВК-1.1",
+        "ВК-4.2",
+        "КИМ-0",
+        "уровня П по BD-1",
+    ):
+        if snippet not in entry_text:
+            errors.append(f"entry-profile.docx is missing: {snippet!r}")
+    for snippet in (
+        "BD-1.2",
+        "BD-1.3",
+        "BD-1.5",
+        "курс формирует уровень С",
+        "момента их доступности",
+        "10 б.",
+        "20 б.",
+        "50–69 — 3",
+        "70–85 — 4",
+        "86–100 — 5",
+    ):
+        if snippet not in slides_text:
+            errors.append(f"course-presentation.pptx is missing: {snippet!r}")
+
+    forbidden = (
+        "[указать",
+        "6ого",
+        "информатика» (01.03.02)",
+        "BD-1.4",
+        "1.2–1.5",
+    )
+    for label, text in (
+        ("rpd-draft.docx", rpd_text),
+        ("entry-profile.docx", entry_text),
+        ("course-presentation.pptx", slides_text),
+    ):
+        for snippet in forbidden:
+            if snippet.casefold() in text.casefold():
+                errors.append(f"{label} contains stale text: {snippet!r}")
+
+
 def check_synthetic_case(errors: list[str]) -> None:
     case_root = ROOT / "examples/synthetic-case"
     data_path = case_root / "data/subscriber_retention.csv"
@@ -1235,16 +1513,19 @@ def check_synthetic_case(errors: list[str]) -> None:
 
 
 def check_files(errors: list[str]) -> None:
-    for path in ROOT.rglob("*"):
-        if (
-            not path.is_file()
-            or set(path.relative_to(ROOT).parts) & LOCAL_DIRECTORY_NAMES
-        ):
-            continue
-        if path.name.startswith("~$") or path.suffix.lower() == ".tmp":
-            errors.append(f"temporary file tracked: {path.relative_to(ROOT)}")
-        if path.stat().st_size >= 95 * 1024 * 1024:
-            errors.append(f"file is too large for regular GitHub storage: {path.relative_to(ROOT)}")
+    for directory, subdirectories, filenames in os.walk(ROOT):
+        subdirectories[:] = [
+            name for name in subdirectories if name not in LOCAL_DIRECTORY_NAMES
+        ]
+        for filename in filenames:
+            path = Path(directory) / filename
+            if path.name.startswith("~$") or path.suffix.lower() == ".tmp":
+                errors.append(f"temporary file tracked: {path.relative_to(ROOT)}")
+            if path.stat().st_size >= 95 * 1024 * 1024:
+                errors.append(
+                    "file is too large for regular GitHub storage: "
+                    f"{path.relative_to(ROOT)}"
+                )
 
 
 def main() -> int:
@@ -1261,6 +1542,9 @@ def main() -> int:
     check_formative_assessment(errors)
     check_measurement_model(errors)
     check_role_trajectory(errors)
+    check_krm_source(errors)
+    check_publication_status(errors)
+    check_office_attachments(errors)
     check_synthetic_case(errors)
     check_environment_files(errors)
     check_files(errors)
@@ -1275,9 +1559,12 @@ def main() -> int:
     print(
         "Checked: required files, links and anchors, template markers, six rubrics, "
         "KIM/FOS points, indicator thresholds, question coverage, environment files, "
-        "and synthetic case."
+        "KRM source, publication status, office attachments, and synthetic case."
     )
-    print("Manual publication checks remain: team identities, OPOP metadata, and license approval.")
+    print(
+        "Manual institutional decisions remain: official author names, adoption in a "
+        "specific OPOP, responsible organization, and license approval."
+    )
     return 0
 
 

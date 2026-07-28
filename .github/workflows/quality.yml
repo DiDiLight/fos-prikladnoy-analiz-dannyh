@@ -19,7 +19,7 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-lock.txt
-      - name: Validate structure, links, rubrics, FOS, and thresholds
+      - name: Validate KRM, documentation, FOS, links, and office attachments
         run: python scripts/validate_repository.py
       - name: Install locked teaching environment
         run: |

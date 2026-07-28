@@ -3,11 +3,17 @@
 │   └── workflows/quality.yml
 ├── docs/
 │   ├── attachments/
+│   │   ├── README.md
+│   │   ├── course-presentation.pptx
+│   │   ├── entry-profile.docx
+│   │   └── rpd-draft.docx
 │   ├── README.md
 │   ├── assessment-system.md
 │   ├── competency-model.md
+│   ├── entry-profile.md
 │   ├── fos.md
 │   ├── measurement-model.md
+│   ├── publication-status.md
 │   ├── quality-checklist.md
 │   ├── review-guide.md
 │   ├── role-trajectory.md
