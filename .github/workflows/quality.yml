@@ -17,16 +17,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Validate repository
+          cache: pip
+          cache-dependency-path: requirements-lock.txt
+      - name: Validate structure, links, rubrics, FOS, and thresholds
         run: python scripts/validate_repository.py
-      - name: Install synthetic case dependencies
-        run: python -m pip install -r examples/synthetic-case/requirements-test.txt
-      - name: Rebuild synthetic case and baseline
+      - name: Install locked teaching environment
         run: |
-          python examples/synthetic-case/generate_data.py --output /tmp/synthetic-case/subscriber_retention.csv
-          python examples/synthetic-case/teacher/baseline.py \
-            --data /tmp/synthetic-case/subscriber_retention.csv \
-            --output-dir /tmp/synthetic-case/baseline \
-            --check-range
-      - name: Test synthetic case
+          python -m pip install --disable-pip-version-check -r requirements-lock.txt
+          python -m pip check
+      - name: Generate small case, run baseline, and guard leakage
+        run: python scripts/smoke_test.py
+      - name: Run reproducibility tests
         run: python -m unittest discover -s examples/synthetic-case/tests -v

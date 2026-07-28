@@ -73,20 +73,22 @@
 ### Windows PowerShell
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python -m pip install --upgrade pip
-.\.venv\Scripts\python -m pip install -r examples\synthetic-case\requirements.txt
-.\.venv\Scripts\python examples\synthetic-case\generate_data.py
-.\.venv\Scripts\python examples\synthetic-case\teacher\baseline.py --check-range
-.\.venv\Scripts\python -m unittest discover -s examples\synthetic-case\tests -v
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --disable-pip-version-check -r requirements-lock.txt
+.\.venv\Scripts\python.exe scripts\smoke_test.py
+.\.venv\Scripts\python.exe examples\synthetic-case\generate_data.py
+.\.venv\Scripts\python.exe examples\synthetic-case\teacher\baseline.py --check-range
+.\.venv\Scripts\python.exe -m unittest discover -s examples\synthetic-case\tests -v
 ```
+
+Команды для Windows `cmd.exe` приведены в [корневом README](../../README.md#7-окружение-и-проверка-комплекта).
 
 ### Linux и macOS
 
 ```bash
 python3 -m venv .venv
-./.venv/bin/python -m pip install --upgrade pip
-./.venv/bin/python -m pip install -r examples/synthetic-case/requirements.txt
+./.venv/bin/python -m pip install --disable-pip-version-check -r requirements-lock.txt
+./.venv/bin/python scripts/smoke_test.py
 ./.venv/bin/python examples/synthetic-case/generate_data.py
 ./.venv/bin/python examples/synthetic-case/teacher/baseline.py --check-range
 ./.venv/bin/python -m unittest discover -s examples/synthetic-case/tests -v

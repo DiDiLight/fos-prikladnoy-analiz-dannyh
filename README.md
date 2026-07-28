@@ -127,15 +127,33 @@
 - причинное утверждение без подходящего дизайна;
 - неподтверждённый вклад участника пары.
 
-## 7. Проверка комплекта
+## 7. Окружение и проверка комплекта
 
-Локальный запуск:
+Курс поддерживает Python 3.12. [`requirements.txt`](requirements.txt) оставлен коротким и читаемым: в нём перечислены только прямые зависимости и допустимые диапазоны. Единственная точная фиксация окружения — [`requirements-lock.txt`](requirements-lock.txt), собранный для Windows, Linux и macOS.
 
-```bash
-python scripts/validate_repository.py
+### Windows PowerShell
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --disable-pip-version-check -r requirements-lock.txt
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe scripts\validate_repository.py
+.\.venv\Scripts\python.exe scripts\smoke_test.py
+.\.venv\Scripts\python.exe -m unittest discover -s examples\synthetic-case\tests -v
 ```
 
-Та же проверка выполняется GitHub Actions при каждом push и Pull Request. CI также пересоздаёт авторский набор, проверяет диапазон baseline и запускает тесты кейса. Внешней команде предназначены [инструкция рецензенту](docs/review-guide.md) и [чек-лист готовности](docs/quality-checklist.md).
+### Windows cmd.exe
+
+```bat
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install --disable-pip-version-check -r requirements-lock.txt
+.venv\Scripts\python.exe -m pip check
+.venv\Scripts\python.exe scripts\validate_repository.py
+.venv\Scripts\python.exe scripts\smoke_test.py
+.venv\Scripts\python.exe -m unittest discover -s examples\synthetic-case\tests -v
+```
+
+Валидатор проверяет обязательные файлы, относительные ссылки и якоря, незаполненные маркеры, суммы рубрик, соответствие КИМ карте ФОС и пороги индикаторов. Smoke-test создаёт небольшой набор во временной папке, запускает baseline и проверяет, что недоступные признаки не попали в эталонную матрицу. Те же шаги выполняются GitHub Actions при каждом push и Pull Request. Внешней команде предназначены [инструкция рецензенту](docs/review-guide.md) и [чек-лист готовности](docs/quality-checklist.md).
 
 ## 8. Структура и лицензии
 

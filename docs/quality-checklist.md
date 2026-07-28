@@ -30,14 +30,23 @@
 ## Техническая проверка
 
 - [x] В публикуемых Markdown-файлах отсутствуют незаполненные шаблонные маркеры.
-- [x] Относительные Markdown-ссылки проверяются автоматически.
+- [x] Относительные Markdown-ссылки и якоря проверяются автоматически.
+- [x] Наличие обязательных документов, КИМ, рубрик и файлов учебного кейса проверяется автоматически.
+- [x] Максимумы всех шести рубрик пересчитываются и сопоставляются с КИМ и картой ФОС.
+- [x] Пороги индикаторов сверяются между паспортом ФОС, системой оценивания и единой моделью измерения.
 - [x] В репозиторий не включаются временные файлы офисных приложений.
 - [x] Размеры файлов не превышают ограничения GitHub.
+- [x] [`requirements.txt`](../requirements.txt) содержит читаемый список прямых зависимостей.
+- [x] [`requirements-lock.txt`](../requirements-lock.txt) фиксирует единое окружение Python 3.12 для Windows, Linux и macOS.
+- [x] Минимальный [`smoke_test.py`](../scripts/smoke_test.py) генерирует данные, запускает baseline и проверяет исключение недоступных признаков.
 - [x] Добавлен GitHub Actions workflow.
-- [x] CI пересобирает синтетический набор, проверяет baseline и запускает тесты кейса.
+- [x] CI устанавливает lock-окружение, запускает валидатор, smoke-test и тесты воспроизводимости.
 
-Запуск проверки:
+Полная локальная проверка после установки окружения:
 
-```bash
-python scripts/validate_repository.py
+```powershell
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe scripts\validate_repository.py
+.\.venv\Scripts\python.exe scripts\smoke_test.py
+.\.venv\Scripts\python.exe -m unittest discover -s examples\synthetic-case\tests -v
 ```

@@ -48,6 +48,8 @@ REQUIRED_PATHS = [
     "team/README.md",
     "data/krm-v3.0.xlsx",
     "requirements.txt",
+    "requirements-lock.txt",
+    "scripts/smoke_test.py",
 ]
 
 MODULES = [
@@ -63,7 +65,6 @@ SYNTHETIC_CASE_PATHS = [
     "examples/synthetic-case/README.md",
     "examples/synthetic-case/LICENSE-DATA.md",
     "examples/synthetic-case/requirements.txt",
-    "examples/synthetic-case/requirements-test.txt",
     "examples/synthetic-case/generate_data.py",
     "examples/synthetic-case/generate_variants.py",
     "examples/synthetic-case/data/subscriber_retention.csv",
@@ -88,6 +89,17 @@ FORBIDDEN_MARKERS = [
     "kim-01-template",
 ]
 
+FORBIDDEN_MARKER_PATTERNS = [
+    re.compile(
+        r"\[(?:ЗАПОЛНИТЬ|ФИО|ОПОП|ДАТА|СЕМЕСТР|ОРГАНИЗАЦИЯ|"
+        r"НАЗВАНИЕ(?:\s+[^\]]+)?)\]",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:TODO|TBD|PLACEHOLDER|FIXME|XXX)\b", re.IGNORECASE),
+    re.compile(r"\{\{[^{}\r\n]+\}\}"),
+    re.compile(r"<<[^<>\r\n]+>>"),
+]
+
 KIM_REQUIRED_HEADINGS = [
     "## Назначение",
     "## Проверяем",
@@ -96,9 +108,12 @@ KIM_REQUIRED_HEADINGS = [
     "## Внешние ресурсы и генеративный ИИ",
 ]
 
-LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+LINK_PATTERN = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 LINK_ENTRY_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 POINT_PATTERN = re.compile(r"^\| (?:Модуль [1-6]|Зачёт) \|.*\| (\d+) \|$", re.MULTILINE)
+HEADING_PATTERN = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+DECLARED_MAX_PATTERN = re.compile(r"\*\*Максимум:\s*(\d+)\s+бал", re.IGNORECASE)
+KIM_MAX_PATTERN = re.compile(r"Максимум\s*[—–-]\s*(\d+)\s+бал", re.IGNORECASE)
 
 TARGET_COVERAGE = {
     "LC-1.1": [
@@ -188,6 +203,16 @@ INDICATOR_THRESHOLDS = {
     "ML-2.1": "8 из 15",
     "ML-2.2": "8 из 15",
     "ML-2.3": "11 из 21",
+}
+
+INDICATOR_MINIMUMS = {
+    "LC-1.1": 7,
+    "BD-1.2": 9,
+    "BD-1.3": 5,
+    "BD-1.5": 4,
+    "ML-2.1": 8,
+    "ML-2.2": 8,
+    "ML-2.3": 11,
 }
 
 MEASUREMENT_LINKS = {
@@ -283,19 +308,54 @@ def check_markers(errors: list[str]) -> None:
         for marker in FORBIDDEN_MARKERS:
             if marker in text:
                 errors.append(f"unresolved marker {marker!r}: {path.relative_to(ROOT)}")
+        for pattern in FORBIDDEN_MARKER_PATTERNS:
+            match = pattern.search(text)
+            if match:
+                errors.append(
+                    f"unresolved template marker {match.group(0)!r}: "
+                    f"{path.relative_to(ROOT)}"
+                )
+
+
+def github_heading_anchors(text: str) -> set[str]:
+    """Return GitHub-style anchors for Markdown ATX headings."""
+
+    anchors: set[str] = set()
+    slug_counts: dict[str, int] = {}
+    for line in text.splitlines():
+        match = HEADING_PATTERN.match(line)
+        if not match:
+            continue
+        heading = match.group(1).strip().rstrip("#").strip()
+        heading = re.sub(r"<[^>]+>", "", heading)
+        heading = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", heading)
+        heading = re.sub(r"[`*_~]", "", heading).casefold()
+        slug = "".join(
+            character
+            for character in heading
+            if character.isalnum() or character in {" ", "-", "_"}
+        )
+        slug = re.sub(r"[\s-]+", "-", slug).strip("-")
+        if not slug:
+            continue
+        duplicate_index = slug_counts.get(slug, 0)
+        slug_counts[slug] = duplicate_index + 1
+        anchors.add(slug if duplicate_index == 0 else f"{slug}-{duplicate_index}")
+    return anchors
 
 
 def check_links(errors: list[str]) -> None:
+    anchors_by_path: dict[Path, set[str]] = {}
     for path in markdown_files():
         text = path.read_text(encoding="utf-8")
         for raw_target in LINK_PATTERN.findall(text):
             target = raw_target.strip().split()[0].strip("<>")
-            if target.startswith(("http://", "https://", "mailto:", "#")):
+            if target.startswith(("http://", "https://", "mailto:")):
                 continue
-            file_part = unquote(target.split("#", 1)[0])
-            if not file_part:
-                continue
-            resolved = (path.parent / file_part).resolve()
+            file_part, separator, raw_anchor = target.partition("#")
+            file_part = unquote(file_part)
+            raw_anchor = unquote(raw_anchor).casefold()
+            resolved = (path.parent / file_part).resolve() if file_part else path.resolve()
             try:
                 resolved.relative_to(ROOT.resolve())
             except ValueError:
@@ -303,6 +363,16 @@ def check_links(errors: list[str]) -> None:
                 continue
             if not resolved.exists():
                 errors.append(f"broken local link: {path.relative_to(ROOT)} -> {target}")
+                continue
+            if separator and raw_anchor and resolved.suffix.casefold() == ".md":
+                if resolved not in anchors_by_path:
+                    anchors_by_path[resolved] = github_heading_anchors(
+                        resolved.read_text(encoding="utf-8")
+                    )
+                if raw_anchor not in anchors_by_path[resolved]:
+                    errors.append(
+                        f"broken Markdown anchor: {path.relative_to(ROOT)} -> {target}"
+                    )
 
 
 def check_kim_sections(errors: list[str]) -> None:
@@ -361,6 +431,235 @@ def check_fos_matrix(errors: list[str]) -> None:
         column_totals = [sum(row[index] for row in found.values()) for index in range(8)]
         if column_totals != [14, 18, 9, 8, 15, 15, 21, 100]:
             errors.append(f"unexpected FOS column totals: {column_totals}")
+
+
+def markdown_table_cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def check_rubrics(errors: list[str]) -> None:
+    """Recalculate every module rubric and compare it with its KIM and FOS row."""
+
+    for module_index, (module, kim_file, rubric_file) in enumerate(MODULES, start=1):
+        rubric_path = ROOT / module / rubric_file
+        kim_path = ROOT / module / kim_file
+        if not rubric_path.exists() or not kim_path.exists():
+            continue
+
+        rubric_text = rubric_path.read_text(encoding="utf-8")
+        lines = rubric_text.splitlines()
+        header_index = next(
+            (
+                index
+                for index, line in enumerate(lines)
+                if line.startswith("|") and "Индикатор" in line
+            ),
+            None,
+        )
+        if header_index is None:
+            errors.append(f"rubric has no indicator table: {rubric_path.relative_to(ROOT)}")
+            continue
+
+        header = markdown_table_cells(lines[header_index])
+        points_column = next(
+            (
+                index
+                for index, cell in enumerate(header)
+                if cell.casefold() in {"максимум", "балл", "баллы"}
+            ),
+            None,
+        )
+        scale_values = [
+            int(match.group(1))
+            for cell in header
+            if (match := re.search(r"(\d+)\s+бал", cell, re.IGNORECASE))
+        ]
+        row_scale_max = max(scale_values) if scale_values else None
+        if points_column is None and row_scale_max is None:
+            errors.append(
+                f"rubric has no readable point scale: {rubric_path.relative_to(ROOT)}"
+            )
+            continue
+
+        by_indicator: dict[str, int] = {}
+        data_rows = 0
+        for line in lines[header_index + 2 :]:
+            if not line.startswith("|"):
+                break
+            cells = markdown_table_cells(line)
+            if len(cells) != len(header):
+                errors.append(
+                    f"rubric row has {len(cells)} columns, expected {len(header)}: "
+                    f"{rubric_path.relative_to(ROOT)}"
+                )
+                continue
+            indicator = cells[0].strip("`")
+            if indicator not in TARGET_INDICATORS:
+                errors.append(
+                    f"rubric contains unknown indicator {indicator!r}: "
+                    f"{rubric_path.relative_to(ROOT)}"
+                )
+                continue
+            if points_column is not None:
+                raw_points = re.sub(r"[*_`]", "", cells[points_column])
+                match = re.fullmatch(r"\d+", raw_points)
+                if not match:
+                    errors.append(
+                        f"rubric has non-numeric maximum {cells[points_column]!r}: "
+                        f"{rubric_path.relative_to(ROOT)}"
+                    )
+                    continue
+                row_points = int(raw_points)
+            else:
+                row_points = int(row_scale_max)
+            by_indicator[indicator] = by_indicator.get(indicator, 0) + row_points
+            data_rows += 1
+
+        total = sum(by_indicator.values())
+        declared_match = DECLARED_MAX_PATTERN.search(rubric_text)
+        if not declared_match:
+            errors.append(f"rubric has no declared maximum: {rubric_path.relative_to(ROOT)}")
+        elif int(declared_match.group(1)) != total:
+            errors.append(
+                f"rubric calculated maximum is {total}, declared "
+                f"{declared_match.group(1)}: {rubric_path.relative_to(ROOT)}"
+            )
+        if data_rows == 0:
+            errors.append(f"rubric has no criteria rows: {rubric_path.relative_to(ROOT)}")
+
+        kim_name = f"КИМ-{module_index}"
+        expected_row = FOS_MATRIX[kim_name]
+        expected_by_indicator = {
+            indicator: expected_row[index]
+            for index, indicator in enumerate(TARGET_INDICATORS)
+            if expected_row[index] > 0
+        }
+        if by_indicator != expected_by_indicator:
+            errors.append(
+                f"rubric distribution does not match docs/fos.md for {kim_name}: "
+                f"{by_indicator} != {expected_by_indicator}"
+            )
+        if total != expected_row[-1]:
+            errors.append(
+                f"rubric total does not match docs/fos.md for {kim_name}: "
+                f"{total} != {expected_row[-1]}"
+            )
+
+        kim_text = kim_path.read_text(encoding="utf-8")
+        kim_match = KIM_MAX_PATTERN.search(kim_text)
+        if not kim_match:
+            errors.append(f"KIM has no declared maximum: {kim_path.relative_to(ROOT)}")
+        elif int(kim_match.group(1)) != total:
+            errors.append(
+                f"KIM maximum does not match rubric for {kim_name}: "
+                f"{kim_match.group(1)} != {total}"
+            )
+
+
+def parse_indicator_thresholds(
+    path: Path,
+    include_available_column: bool,
+    errors: list[str],
+) -> dict[str, tuple[int, int]]:
+    found: dict[str, tuple[int, int]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = markdown_table_cells(line)
+        indicator = cells[0].strip("`") if cells else ""
+        if indicator not in TARGET_INDICATORS:
+            continue
+        try:
+            if include_available_column and len(cells) == 3:
+                available = int(cells[1])
+                minimum = int(cells[2])
+            elif not include_available_column and len(cells) == 2:
+                if "из" not in cells[1]:
+                    continue
+                match = re.fullmatch(r"(\d+)\s+из\s+(\d+)", cells[1])
+                if not match:
+                    raise ValueError
+                minimum = int(match.group(1))
+                available = int(match.group(2))
+            else:
+                raise ValueError
+        except ValueError:
+            errors.append(
+                f"invalid threshold row for {indicator}: {path.relative_to(ROOT)}"
+            )
+            continue
+        found[indicator] = (available, minimum)
+    return found
+
+
+def check_indicator_thresholds(errors: list[str]) -> None:
+    fos_thresholds = parse_indicator_thresholds(
+        ROOT / "docs/fos.md",
+        include_available_column=True,
+        errors=errors,
+    )
+    assessment_thresholds = parse_indicator_thresholds(
+        ROOT / "docs/assessment-system.md",
+        include_available_column=False,
+        errors=errors,
+    )
+    available_totals = {
+        indicator: sum(row[index] for row in FOS_MATRIX.values())
+        for index, indicator in enumerate(TARGET_INDICATORS)
+    }
+    expected = {
+        indicator: (available_totals[indicator], INDICATOR_MINIMUMS[indicator])
+        for indicator in TARGET_INDICATORS
+    }
+    if fos_thresholds != expected:
+        errors.append(f"indicator thresholds in docs/fos.md differ: {fos_thresholds}")
+    if assessment_thresholds != expected:
+        errors.append(
+            "indicator thresholds in docs/assessment-system.md differ: "
+            f"{assessment_thresholds}"
+        )
+
+
+def check_environment_files(errors: list[str]) -> None:
+    lock_path = ROOT / "requirements-lock.txt"
+    readable_path = ROOT / "requirements.txt"
+    case_path = ROOT / "examples/synthetic-case/requirements.txt"
+    if not all(path.exists() for path in (lock_path, readable_path, case_path)):
+        return
+
+    lock_text = lock_path.read_text(encoding="utf-8")
+    if "autogenerated by uv" not in lock_text or "--universal --python-version 3.12" not in lock_text:
+        errors.append("requirements-lock.txt is not a universal Python 3.12 uv lock")
+
+    direct_packages = {
+        "jupyterlab",
+        "numpy",
+        "pandas",
+        "scipy",
+        "statsmodels",
+        "matplotlib",
+        "seaborn",
+        "scikit-learn",
+    }
+    locked_packages: set[str] = set()
+    for line in lock_text.splitlines():
+        if not line or line.startswith(("#", " ")):
+            continue
+        if "==" not in line:
+            errors.append(f"unlocked requirement in requirements-lock.txt: {line}")
+            continue
+        locked_packages.add(line.split("==", 1)[0].strip().casefold())
+    missing = sorted(direct_packages - locked_packages)
+    if missing:
+        errors.append(f"direct dependencies missing from requirements-lock.txt: {missing}")
+
+    readable_text = readable_path.read_text(encoding="utf-8")
+    for package in direct_packages:
+        if not re.search(rf"^{re.escape(package)}[<>=]", readable_text, re.MULTILINE):
+            errors.append(f"direct dependency missing from requirements.txt: {package}")
+    case_text = case_path.read_text(encoding="utf-8")
+    if "-r ../../requirements.txt" not in case_text or "==" in case_text:
+        errors.append("synthetic case must reuse the readable root requirements.txt")
 
 
 def check_measurement_model(errors: list[str]) -> None:
@@ -725,9 +1024,12 @@ def main() -> int:
     check_points(errors)
     check_indicator_coverage(errors)
     check_fos_matrix(errors)
+    check_rubrics(errors)
+    check_indicator_thresholds(errors)
     check_measurement_model(errors)
     check_role_trajectory(errors)
     check_synthetic_case(errors)
+    check_environment_files(errors)
     check_files(errors)
 
     if errors:
@@ -737,6 +1039,10 @@ def main() -> int:
         return 1
 
     print(f"Repository validation passed: {len(markdown_files())} Markdown files checked.")
+    print(
+        "Checked: required files, links and anchors, template markers, six rubrics, "
+        "KIM/FOS points, indicator thresholds, environment files, and synthetic case."
+    )
     print("Manual publication checks remain: team identities, OPOP metadata, and license approval.")
     return 0
 

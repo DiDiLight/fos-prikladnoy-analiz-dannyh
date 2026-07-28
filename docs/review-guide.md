@@ -6,9 +6,35 @@
 
 > роль → компетенция → индикатор → предметный дескриптор → КИМ → рубрика → итоговый балл.
 
+## Технический запуск из чистого окружения
+
+Используется Python 3.12 и единый [`requirements-lock.txt`](../requirements-lock.txt). Для PowerShell:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --disable-pip-version-check -r requirements-lock.txt
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe scripts\validate_repository.py
+.\.venv\Scripts\python.exe scripts\smoke_test.py
+.\.venv\Scripts\python.exe -m unittest discover -s examples\synthetic-case\tests -v
+```
+
+Для обычной командной строки Windows:
+
+```bat
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install --disable-pip-version-check -r requirements-lock.txt
+.venv\Scripts\python.exe -m pip check
+.venv\Scripts\python.exe scripts\validate_repository.py
+.venv\Scripts\python.exe scripts\smoke_test.py
+.venv\Scripts\python.exe -m unittest discover -s examples\synthetic-case\tests -v
+```
+
+Валидатор проверяет ссылки вместе с якорями, обязательные файлы, шаблонные маркеры, расчёт каждой рубрики, соответствие КИМ карте ФОС и пороги индикаторов. Smoke-test работает во временной папке: создаёт небольшой набор, строит логистический baseline и завершает работу с ошибкой, если недоступный признак попал в эталонный пайплайн.
+
 ## Быстрый сценарий
 
-1. Запустите `python scripts/validate_repository.py`.
+1. Выполните технический запуск из раздела выше и сравните его результат с GitHub Actions.
 2. Прочитайте [РПД](rpd.md) и проверьте достижимость результатов за 108 часов.
 3. Сверьте входные и целевые индикаторы в [модели компетенций](competency-model.md).
 4. Проверьте по [траектории роли](role-trajectory.md), что уровень С по `BD-1` не выдан за рекомендованный для Data Analyst уровень П, а последующие элементы описаны как возможные.
@@ -16,7 +42,7 @@
 6. Проверьте карту покрытия в [паспорте ФОС](fos.md): суммы модели измерения по КИМ и индикаторам должны совпадать с паспортом, общий итог — 100.
 7. Проверьте синхронизацию учебного и проектного контуров по [семестровому плану](semester-guide.md).
 8. Выберите по одному КИМ из модулей 1–5 и сопоставьте каждую строку рубрики с индикатором.
-9. Пересоздайте [авторский синтетический кейс](../examples/synthetic-case/README.md), запустите baseline и убедитесь, что тесты исключают утечку.
+9. Просмотрите вывод smoke-test и тестов [авторского синтетического кейса](../examples/synthetic-case/README.md): baseline должен работать без `leaked_churn_score` и `retention_offer_result_14d`.
 10. Проверьте итоговый [проект](../Project/README.md), материалы студента и индивидуальность [защиты](../Exam/README.md).
 11. Зафиксируйте замечания в Issue либо Pull Request с указанием файла и критерия.
 
