@@ -1,0 +1,18 @@
+{
+  "generator_version": "1.0.0",
+  "parameters": {
+    "seed": 20260728,
+    "n_customers": 1200,
+    "months": 8,
+    "start_date": "2024-01-01",
+    "missing_rate": 0.06,
+    "duplicate_rate": 0.015,
+    "outlier_rate": 0.008,
+    "churn_logit_shift": 0.0,
+    "seasonality_strength": 0.3
+  },
+  "rows_with_duplicates": 9744,
+  "unique_rows": 9600,
+  "positive_rate": 0.113814,
+  "sha256": "fd87f4b1e4887d6101b878bb06b1fe7c2335b17e7358e9f1d67166166ce11381"
+}

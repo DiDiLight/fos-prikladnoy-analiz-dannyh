@@ -23,6 +23,7 @@ data/raw/
 data/processed/
 models/
 artifacts/
+examples/synthetic-case/variants/
 
 # Keep directory placeholders
 !.gitkeep

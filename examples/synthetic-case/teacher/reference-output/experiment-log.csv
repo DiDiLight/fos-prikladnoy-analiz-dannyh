@@ -1,0 +1,2 @@
+run_id,model_seed,cutoff_date,train_rows,test_rows,roc_auc,average_precision,f1_at_0_50,precision_at_top_15pct,recall_at_top_15pct
+safe-logreg-seed-20260728,20260728,2024-07-01,7200,2400,0.722128,0.298277,0.291793,0.316667,0.416058

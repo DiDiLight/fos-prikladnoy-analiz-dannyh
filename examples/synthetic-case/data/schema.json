@@ -1,0 +1,97 @@
+{
+  "row_id": {
+    "type": "string",
+    "role": "identifier",
+    "available_at_decision": true
+  },
+  "customer_id": {
+    "type": "string",
+    "role": "group",
+    "available_at_decision": true
+  },
+  "snapshot_date": {
+    "type": "date",
+    "role": "time",
+    "available_at_decision": true
+  },
+  "region": {
+    "type": "category",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "plan_type": {
+    "type": "category",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "acquisition_channel": {
+    "type": "category",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "autopay": {
+    "type": "category",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "tenure_months": {
+    "type": "integer",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "monthly_fee": {
+    "type": "number",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "usage_hours_30d": {
+    "type": "number",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "usage_change_90d": {
+    "type": "number",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "support_tickets_90d": {
+    "type": "integer",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "late_payments_6m": {
+    "type": "integer",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "satisfaction_score": {
+    "type": "number",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "days_since_last_login": {
+    "type": "number",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "network_incidents_30d": {
+    "type": "integer",
+    "role": "feature",
+    "available_at_decision": true
+  },
+  "leaked_churn_score": {
+    "type": "number",
+    "role": "intentional_leakage",
+    "available_at_decision": false
+  },
+  "retention_offer_result_14d": {
+    "type": "category",
+    "role": "post_decision_feature",
+    "available_at_decision": false
+  },
+  "churn_30d": {
+    "type": "integer",
+    "role": "target",
+    "available_at_decision": false
+  }
+}

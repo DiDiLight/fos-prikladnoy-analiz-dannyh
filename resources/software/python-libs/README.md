@@ -13,3 +13,5 @@
 | scikit-learn | пайплайны, модели и оценка | КИМ-3–6 | [документация](https://scikit-learn.org/stable/) | `>=1.5,<2` | BSD-3-Clause | 2026-07-21 |
 
 Единый список диапазонов находится в корневом [`requirements.txt`](../../../requirements.txt). Преподаватель фиксирует точные версии в начале семестра и публикует проверенный lock-файл либо экспорт окружения.
+
+Для [авторского синтетического кейса](../../../examples/synthetic-case/README.md) проверенное окружение закреплено отдельным [`requirements.txt`](../../../examples/synthetic-case/requirements.txt), а облегчённый набор для CI — в [`requirements-test.txt`](../../../examples/synthetic-case/requirements-test.txt).

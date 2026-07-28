@@ -4,6 +4,12 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 *.txt text eol=lf
+*.json text eol=lf
 *.xlsx binary
 *.docx binary
 *.pptx binary
+
+# The generated teaching dataset must keep LF endings so that its recorded
+# checksum remains stable on Windows, Linux, and macOS.
+examples/synthetic-case/**/*.csv text eol=lf
+examples/synthetic-case/**/*.ipynb text eol=lf

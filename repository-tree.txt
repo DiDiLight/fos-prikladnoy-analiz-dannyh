@@ -29,6 +29,16 @@
 │   ├── defense-protocol.md
 │   ├── presentation-guide.md
 │   └── speech-outline.md
+├── examples/
+│   └── synthetic-case/
+│       ├── data/
+│       ├── src/
+│       ├── student/
+│       ├── teacher/
+│       ├── tests/
+│       ├── generate_data.py
+│       ├── generate_variants.py
+│       └── README.md
 ├── methodical-guidelines/
 │   ├── students/
 │   ├── teachers-assessment/
@@ -49,6 +59,7 @@
 │   └── validate_repository.py
 ├── team/
 ├── other/
+├── .gitattributes
 ├── .gitignore
 ├── CONTRIBUTING.md
 ├── LICENSE-CODE.md

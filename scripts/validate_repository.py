@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import csv
+import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -10,9 +13,18 @@ from urllib.parse import unquote
 
 
 ROOT = Path(__file__).resolve().parents[1]
+LOCAL_DIRECTORY_NAMES = {
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".ipynb_checkpoints",
+}
 
 REQUIRED_PATHS = [
     "README.md",
+    ".gitattributes",
     "CONTRIBUTING.md",
     "LICENSE.md",
     "LICENSE-CODE.md",
@@ -45,6 +57,26 @@ MODULES = [
     ("M4-modeling", "kim-04-modeling.md", "rubric-04.md"),
     ("M5-evaluation", "kim-05-validation.md", "rubric-05.md"),
     ("M6-analytical-product", "kim-06-analytical-report.md", "rubric-06.md"),
+]
+
+SYNTHETIC_CASE_PATHS = [
+    "examples/synthetic-case/README.md",
+    "examples/synthetic-case/LICENSE-DATA.md",
+    "examples/synthetic-case/requirements.txt",
+    "examples/synthetic-case/requirements-test.txt",
+    "examples/synthetic-case/generate_data.py",
+    "examples/synthetic-case/generate_variants.py",
+    "examples/synthetic-case/data/subscriber_retention.csv",
+    "examples/synthetic-case/data/generation-manifest.json",
+    "examples/synthetic-case/data/schema.json",
+    "examples/synthetic-case/src/__init__.py",
+    "examples/synthetic-case/src/data_preparation.py",
+    "examples/synthetic-case/student/starter.ipynb",
+    "examples/synthetic-case/teacher/baseline.py",
+    "examples/synthetic-case/teacher/expected_metric_ranges.json",
+    "examples/synthetic-case/teacher/reference-output/baseline-metrics.json",
+    "examples/synthetic-case/teacher/reference-output/experiment-log.csv",
+    "examples/synthetic-case/tests/test_case.py",
 ]
 
 FORBIDDEN_MARKERS = [
@@ -225,7 +257,11 @@ ROLE_TRAJECTORY_SYNC_FILES = [
 
 
 def markdown_files() -> list[Path]:
-    return sorted(path for path in ROOT.rglob("*.md") if ".git" not in path.parts)
+    return sorted(
+        path
+        for path in ROOT.rglob("*.md")
+        if not set(path.relative_to(ROOT).parts) & LOCAL_DIRECTORY_NAMES
+    )
 
 
 def check_required(errors: list[str]) -> None:
@@ -236,6 +272,9 @@ def check_required(errors: list[str]) -> None:
         for relative in (f"{module}/README.md", f"{module}/{kim}", f"{module}/{rubric}"):
             if not (ROOT / relative).is_file():
                 errors.append(f"missing module file: {relative}")
+    for relative in SYNTHETIC_CASE_PATHS:
+        if not (ROOT / relative).is_file():
+            errors.append(f"missing synthetic case file: {relative}")
 
 
 def check_markers(errors: list[str]) -> None:
@@ -492,9 +531,184 @@ def check_role_trajectory(errors: list[str]) -> None:
             errors.append(f"role trajectory is not linked from: {relative}")
 
 
+def check_synthetic_case(errors: list[str]) -> None:
+    case_root = ROOT / "examples/synthetic-case"
+    data_path = case_root / "data/subscriber_retention.csv"
+    manifest_path = case_root / "data/generation-manifest.json"
+    schema_path = case_root / "data/schema.json"
+    ranges_path = case_root / "teacher/expected_metric_ranges.json"
+    metrics_path = case_root / "teacher/reference-output/baseline-metrics.json"
+    log_path = case_root / "teacher/reference-output/experiment-log.csv"
+    notebook_path = case_root / "student/starter.ipynb"
+
+    required_files = [
+        data_path,
+        manifest_path,
+        schema_path,
+        ranges_path,
+        metrics_path,
+        log_path,
+        notebook_path,
+    ]
+    if not all(path.exists() for path in required_files):
+        return
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    digest = hashlib.sha256(data_path.read_bytes()).hexdigest()
+    if manifest.get("sha256") != digest:
+        errors.append("synthetic case CSV checksum differs from generation manifest")
+    parameters = manifest.get("parameters", {})
+    if parameters.get("seed") != 20260728:
+        errors.append(f"unexpected synthetic case seed: {parameters.get('seed')}")
+    if manifest.get("generator_version") != "1.0.0":
+        errors.append(f"unexpected synthetic generator version: {manifest.get('generator_version')}")
+
+    with data_path.open(encoding="utf-8", newline="") as source:
+        reader = csv.DictReader(source)
+        data_rows = list(reader)
+    if len(data_rows) != manifest.get("rows_with_duplicates"):
+        errors.append(
+            "synthetic case row count differs from manifest: "
+            f"{len(data_rows)} != {manifest.get('rows_with_duplicates')}"
+        )
+
+    expected_fields = {
+        "row_id",
+        "customer_id",
+        "snapshot_date",
+        "region",
+        "plan_type",
+        "acquisition_channel",
+        "autopay",
+        "tenure_months",
+        "monthly_fee",
+        "usage_hours_30d",
+        "usage_change_90d",
+        "support_tickets_90d",
+        "late_payments_6m",
+        "satisfaction_score",
+        "days_since_last_login",
+        "network_incidents_30d",
+        "leaked_churn_score",
+        "retention_offer_result_14d",
+        "churn_30d",
+    }
+    if set(reader.fieldnames or []) != expected_fields:
+        errors.append(f"unexpected synthetic case CSV fields: {reader.fieldnames}")
+
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    if set(schema) != expected_fields:
+        errors.append(f"synthetic case schema fields differ: {sorted(schema)}")
+    for field in ("leaked_churn_score", "retention_offer_result_14d"):
+        if schema.get(field, {}).get("available_at_decision") is not False:
+            errors.append(f"synthetic case field must be unavailable at decision: {field}")
+    if schema.get("leaked_churn_score", {}).get("role") != "intentional_leakage":
+        errors.append("leaked_churn_score is not marked as intentional leakage")
+    if schema.get("retention_offer_result_14d", {}).get("role") != "post_decision_feature":
+        errors.append("retention_offer_result_14d is not marked as post-decision")
+
+    range_payload = json.loads(ranges_path.read_text(encoding="utf-8"))
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    expected_metric_names = {
+        "roc_auc",
+        "average_precision",
+        "f1_at_0_50",
+        "precision_at_top_15pct",
+        "recall_at_top_15pct",
+    }
+    ranges = range_payload.get("ranges", {})
+    if set(ranges) != expected_metric_names:
+        errors.append(f"unexpected synthetic metric range set: {sorted(ranges)}")
+    for name, limits in ranges.items():
+        if not isinstance(limits, list) or len(limits) != 2 or limits[0] >= limits[1]:
+            errors.append(f"invalid metric range for {name}: {limits}")
+            continue
+        value = metrics.get(name)
+        if not isinstance(value, (int, float)) or not limits[0] <= value <= limits[1]:
+            errors.append(f"reference metric {name}={value} is outside {limits}")
+    if set(metrics.get("excluded_fields", [])) != {
+        "leaked_churn_score",
+        "retention_offer_result_14d",
+    }:
+        errors.append("reference baseline does not declare both forbidden fields")
+
+    with log_path.open(encoding="utf-8", newline="") as source:
+        log_rows = list(csv.DictReader(source))
+    if len(log_rows) != 1:
+        errors.append(f"reference experiment log has {len(log_rows)} rows, expected 1")
+    elif log_rows[0].get("run_id") != metrics.get("run_id"):
+        errors.append("reference experiment log run_id differs from baseline metrics")
+
+    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    if notebook.get("nbformat") != 4:
+        errors.append("starter notebook must use nbformat 4")
+    notebook_text = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in notebook.get("cells", [])
+    )
+    if "TODO" not in notebook_text:
+        errors.append("starter notebook has no student TODO markers")
+    if "LogisticRegression" in notebook_text or "teacher/baseline" in notebook_text:
+        errors.append("starter notebook exposes the teacher baseline")
+    for cell in notebook.get("cells", []):
+        if cell.get("cell_type") == "code":
+            if cell.get("execution_count") is not None or cell.get("outputs"):
+                errors.append("starter notebook contains executed code or saved outputs")
+                break
+
+    generation_code = (case_root / "generate_data.py").read_text(encoding="utf-8")
+    preparation_code = (case_root / "src/data_preparation.py").read_text(encoding="utf-8")
+    variant_code = (case_root / "generate_variants.py").read_text(encoding="utf-8")
+    tests_code = (case_root / "tests/test_case.py").read_text(encoding="utf-8")
+    for snippet in (
+        "DEFAULT_SEED = 20260728",
+        "leaked_churn_score",
+        "retention_offer_result_14d",
+        "duplicate_rate",
+        "outlier_rate",
+    ):
+        if snippet not in generation_code:
+            errors.append(f"synthetic generator is missing: {snippet}")
+    for field in ("leaked_churn_score", "retention_offer_result_14d"):
+        if field not in preparation_code:
+            errors.append(f"data preparation does not exclude field: {field}")
+    if "variant_config" not in variant_code or "base_seed + 1009 * variant_id" not in variant_code:
+        errors.append("variant generator does not derive reproducible variant seeds")
+    for test_name in (
+        "test_fixed_seed_is_reproducible",
+        "test_schema_and_types",
+        "test_preprocessor_uses_only_safe_fields",
+        "test_group_split_does_not_share_customers",
+        "test_baseline_is_reproducible",
+        "test_default_dataset_rebuilds_byte_for_byte",
+    ):
+        if test_name not in tests_code:
+            errors.append(f"synthetic case test is missing: {test_name}")
+
+    for relative in (
+        "README.md",
+        "resources/README.md",
+        "resources/datasets/README.md",
+        "resources/problem-banks/README.md",
+        "resources/benchmarks/README.md",
+        "Project/README.md",
+        "docs/review-guide.md",
+        "docs/quality-checklist.md",
+        "methodical-guidelines/README.md",
+        "methodical-guidelines/students/README.md",
+        "methodical-guidelines/teachers-resources/README.md",
+    ):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        if "synthetic-case" not in text:
+            errors.append(f"synthetic case is not linked from: {relative}")
+
+
 def check_files(errors: list[str]) -> None:
     for path in ROOT.rglob("*"):
-        if not path.is_file() or ".git" in path.parts:
+        if (
+            not path.is_file()
+            or set(path.relative_to(ROOT).parts) & LOCAL_DIRECTORY_NAMES
+        ):
             continue
         if path.name.startswith("~$") or path.suffix.lower() == ".tmp":
             errors.append(f"temporary file tracked: {path.relative_to(ROOT)}")
@@ -513,6 +727,7 @@ def main() -> int:
     check_fos_matrix(errors)
     check_measurement_model(errors)
     check_role_trajectory(errors)
+    check_synthetic_case(errors)
     check_files(errors)
 
     if errors:

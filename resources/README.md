@@ -9,6 +9,7 @@
 | Банки тестов | [test-banks](test-banks/README.md) | формат текущего курса не использует закрытый тестовый банк |
 | Банки задач и кейсов | [problem-banks](problem-banks/README.md) | параметризуемые проектные сценарии |
 | Датасеты | [datasets](datasets/README.md) | классификационный и регрессионный треки |
+| Авторский демонстрационный кейс | [synthetic-case](../examples/synthetic-case/README.md) | полный цикл КИМ-1–КИМ-6 на воспроизводимых синтетических данных |
 | Бенчмарки | [benchmarks](benchmarks/README.md) | правила построения baseline и сравнения моделей |
 | Python-библиотеки | [software/python-libs](software/python-libs/README.md) | воспроизводимая программная реализация |
 | LLM и промпты | [llm-prompts](llm-prompts/README.md) | правила декларации и проверки ИИ-помощи |

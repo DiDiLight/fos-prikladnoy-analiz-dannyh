@@ -19,3 +19,14 @@ jobs:
           python-version: "3.12"
       - name: Validate repository
         run: python scripts/validate_repository.py
+      - name: Install synthetic case dependencies
+        run: python -m pip install -r examples/synthetic-case/requirements-test.txt
+      - name: Rebuild synthetic case and baseline
+        run: |
+          python examples/synthetic-case/generate_data.py --output /tmp/synthetic-case/subscriber_retention.csv
+          python examples/synthetic-case/teacher/baseline.py \
+            --data /tmp/synthetic-case/subscriber_retention.csv \
+            --output-dir /tmp/synthetic-case/baseline \
+            --check-range
+      - name: Test synthetic case
+        run: python -m unittest discover -s examples/synthetic-case/tests -v

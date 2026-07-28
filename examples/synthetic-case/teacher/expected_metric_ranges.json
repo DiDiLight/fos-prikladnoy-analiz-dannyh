@@ -1,0 +1,12 @@
+{
+  "dataset": "default synthetic subscriber-retention case",
+  "protocol": "last two snapshot months as test; exact duplicates removed; leakage and post-decision fields excluded",
+  "ranges": {
+    "roc_auc": [0.68, 0.90],
+    "average_precision": [0.22, 0.62],
+    "f1_at_0_50": [0.25, 0.55],
+    "precision_at_top_15pct": [0.28, 0.70],
+    "recall_at_top_15pct": [0.25, 0.70]
+  },
+  "note": "Диапазоны используются для smoke-test и диагностики. Они не являются порогами оценки студенческих работ."
+}
